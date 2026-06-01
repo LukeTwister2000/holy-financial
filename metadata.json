@@ -1,0 +1,6 @@
+{
+  "name": "Finanças Igreja",
+  "description": "Gestão financeira de igreja com fluxo de caixa, controle de membros, dízimos, ofertas voluntárias e relatórios com Inteligência Artificial Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
