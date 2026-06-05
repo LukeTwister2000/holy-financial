@@ -41,6 +41,21 @@ fun DashboardScreen(viewModel: ChurchViewModel, navController: NavController) {
     val totalExpenses = transactions.filter { it.type == TransactionType.DESPESA }.sumOf { it.amount }
     val balance = totalIncomes - totalExpenses
 
+    val now = java.util.Calendar.getInstance()
+    now.set(java.util.Calendar.DAY_OF_WEEK, now.firstDayOfWeek)
+    now.set(java.util.Calendar.HOUR_OF_DAY, 0)
+    now.set(java.util.Calendar.MINUTE, 0)
+    now.set(java.util.Calendar.SECOND, 0)
+    now.set(java.util.Calendar.MILLISECOND, 0)
+    val startOfWeek = now.timeInMillis
+
+    now.add(java.util.Calendar.DAY_OF_WEEK, 7)
+    val endOfWeek = now.timeInMillis
+
+    val weeklyTransactions = transactions.filter { it.date in startOfWeek until endOfWeek }
+    val currentWeekIncomes = weeklyTransactions.filter { it.type != TransactionType.DESPESA }.sumOf { it.amount }
+    val currentWeekExpenses = weeklyTransactions.filter { it.type == TransactionType.DESPESA }.sumOf { it.amount }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -207,6 +222,33 @@ fun DashboardScreen(viewModel: ChurchViewModel, navController: NavController) {
                 }
             }
 
+            // Weekly Summary Panel
+            item {
+                Card(
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("Resumo da Semana", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column {
+                                Text("Receitas na Semana", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                                Text(viewModel.formatCurrency(currentWeekIncomes), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Despesas na Semana", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                                Text(viewModel.formatCurrency(currentWeekExpenses), style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    }
+                }
+            }
+
             // Visual Analytics Pie breakdown
             item {
                 ElevatedCard(
@@ -349,7 +391,7 @@ fun DashboardScreen(viewModel: ChurchViewModel, navController: NavController) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(24.dp),
+                            .padding(horizontal = 24.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -371,6 +413,44 @@ fun DashboardScreen(viewModel: ChurchViewModel, navController: NavController) {
             } else {
                 items(recentList) { t ->
                     RecentTransactionItem(t, viewModel)
+                }
+            }
+
+            item {
+                Spacer(modifier = Modifier.height(8.dp))
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Filled.Cake, contentDescription = "Aniversários", tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Text("Aniversariantes do Mês", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        val members by viewModel.members.collectAsState()
+                        // Since we just added birthDate (Long), we will filter those whose birthDate is > 0
+                        val birthdays = members.filter { it.birthDate > 0L }
+
+                        if (birthdays.isEmpty()) {
+                            Text("Nenhum membro cadastrado com data de nascimento ainda.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f))
+                        } else {
+                            // Filter logic: show all for now since it's a prototype
+                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                birthdays.forEach { 
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Box(modifier = Modifier.size(8.dp).background(MaterialTheme.colorScheme.onTertiaryContainer, CircleShape))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("${it.name} - ${java.text.SimpleDateFormat("dd/MMM").format(java.util.Date(it.birthDate))}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onTertiaryContainer)
+                                        Spacer(Modifier.width(8.dp))
+                                        Badge(containerColor = MaterialTheme.colorScheme.onTertiaryContainer, contentColor = MaterialTheme.colorScheme.tertiaryContainer) { Text("Esta Semana!") }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

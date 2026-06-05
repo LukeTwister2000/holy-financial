@@ -22,4 +22,10 @@ interface ChurchDao {
 
     @Query("DELETE FROM transactions WHERE id = :id")
     suspend fun deleteTransaction(id: Int)
+
+    @Query("SELECT * FROM audit_logs ORDER BY timestamp DESC")
+    fun getAllAuditLogs(): Flow<List<AuditLog>>
+
+    @Insert
+    suspend fun insertAuditLog(log: AuditLog)
 }

@@ -50,6 +50,17 @@ fun SettingsScreen(viewModel: ChurchViewModel) {
     var editContact by remember(churchContact) { mutableStateOf(churchContact) }
     var editAddress by remember(churchAddress) { mutableStateOf(churchAddress) }
 
+    val members by viewModel.members.collectAsState()
+    val transactions by viewModel.transactions.collectAsState()
+
+    val backupExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            exportBackupJson(context, uri, members, transactions)
+        }
+    }
+
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri: Uri? ->
         if (uri != null) {
             viewModel.processChurchLogo(uri)
@@ -351,7 +362,94 @@ fun SettingsScreen(viewModel: ChurchViewModel) {
                     )
                 }
             }
+            // Section 6: Backup
+            Text(
+                text = "Segurança de Dados",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.primary
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        text = "Backup Offline Local",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Gere um arquivo JSON com o banco de dados atual contendo todos os dados financeiros e registros de membros.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Button(
+                        onClick = { backupExportLauncher.launch("ChurchFinance_Backup_${System.currentTimeMillis()}.json") },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.Backup, null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Exportar Banco de Dados (JSON)")
+                    }
+                }
+            }
         }
+    }
+}
+
+fun exportBackupJson(
+    context: android.content.Context,
+    uri: Uri,
+    members: List<com.example.data.Member>,
+    transactions: List<com.example.data.Transaction>
+) {
+    try {
+        val root = org.json.JSONObject()
+        val membersArray = org.json.JSONArray()
+        members.forEach { m ->
+            val obj = org.json.JSONObject()
+            obj.put("id", m.id)
+            obj.put("name", m.name)
+            obj.put("contact", m.contact)
+            obj.put("groupName", m.groupName)
+            obj.put("age", m.age)
+            obj.put("gender", m.gender)
+            obj.put("isLeader", m.isLeader)
+            obj.put("birthDate", m.birthDate)
+            obj.put("joinedDate", m.joinedDate)
+            membersArray.put(obj)
+        }
+        
+        val transactionsArray = org.json.JSONArray()
+        transactions.forEach { t ->
+            val obj = org.json.JSONObject()
+            obj.put("id", t.id)
+            obj.put("title", t.title)
+            obj.put("amount", t.amount)
+            obj.put("type", t.type.name)
+            obj.put("date", t.date)
+            obj.put("memberId", if (t.memberId == null) org.json.JSONObject.NULL else t.memberId)
+            obj.put("isPaidViaPixOrCard", t.isPaidViaPixOrCard)
+            transactionsArray.put(obj)
+        }
+        
+        root.put("members", membersArray)
+        root.put("transactions", transactionsArray)
+        
+        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+            outputStream.write(root.toString(4).toByteArray(Charsets.UTF_8))
+        }
+        Toast.makeText(context, "Backup exportado com sucesso!", Toast.LENGTH_LONG).show()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Erro ao exportar o backup", Toast.LENGTH_SHORT).show()
     }
 }
 

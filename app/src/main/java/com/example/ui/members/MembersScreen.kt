@@ -4,12 +4,14 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ContactPhone
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Mail
 import androidx.compose.material.icons.filled.PeopleOutline
 import androidx.compose.material.icons.filled.Person
@@ -23,18 +25,24 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.data.Member
 import com.example.ui.ChurchViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MembersScreen(viewModel: ChurchViewModel) {
-    val members by viewModel.members.collectAsState()
+    val allMembers by viewModel.members.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
+    
+    val groups = listOf("Todos", "Geral", "Homens", "Mulheres", "Jovens", "Adolescentes", "Crianças")
+    var selectedGroup by remember { mutableStateOf("Todos") }
+    
+    val members = if (selectedGroup == "Todos") allMembers else allMembers.filter { it.groupName == selectedGroup }
 
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Membros Cadastrados", fontWeight = FontWeight.Bold) })
+            TopAppBar(title = { Text("Gestão de Membros e Grupos", fontWeight = FontWeight.Bold, fontSize = 20.sp) })
         },
         floatingActionButton = {
             ExtendedFloatingActionButton(
@@ -52,7 +60,40 @@ fun MembersScreen(viewModel: ChurchViewModel) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (members.isEmpty()) {
+            var searchQuery by remember { mutableStateOf("") }
+            
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                label = { Text("Buscar membro por nome") },
+                leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                shape = RoundedCornerShape(12.dp)
+            )
+
+            LazyRow(
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 0.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(groups) { group ->
+                    FilterChip(
+                        selected = selectedGroup == group,
+                        onClick = { selectedGroup = group },
+                        label = { Text(group) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primary,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                        )
+                    )
+                }
+            }
+            
+            val filteredMembers = members.filter { it.name.contains(searchQuery, ignoreCase = true) }
+
+            if (filteredMembers.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -77,27 +118,20 @@ fun MembersScreen(viewModel: ChurchViewModel) {
                         }
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = "Nenhum Membro Cadastrado.",
+                            text = "Nenhum Membro encontrado no Grupo: $selectedGroup.",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center
-                        )
-                        Text(
-                            text = "Cadastre dadores de dízimos e ofertas para organizar a base de contribuições da sua igreja de forma personalizada.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(top = 4.dp)
                         )
                     }
                 }
             } else {
                 LazyColumn(
-                    contentPadding = PaddingValues(16.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 88.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    items(members, key = { it.id }) { m ->
+                    items(filteredMembers, key = { it.id }) { m ->
                         MemberItem(m)
                     }
                 }
@@ -107,9 +141,18 @@ fun MembersScreen(viewModel: ChurchViewModel) {
 
     if (showDialog) {
         AddMemberDialog(
+            availableGroups = groups.drop(1), // Exclude "Todos"
             onDismiss = { showDialog = false },
-            onSave = { name, contact ->
-                viewModel.insertMember(name, contact)
+            onSave = { name, contact, age, gender, groupName, isLeader, birthDateText ->
+                var finalBirthDate = 0L
+                try {
+                    val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                    val date = sdf.parse(birthDateText)
+                    if (date != null) finalBirthDate = date.time
+                } catch (e: Exception) {
+                    // Ignore parsing error, it stays 0L
+                }
+                viewModel.insertMember(name, contact, age, gender, groupName, isLeader, finalBirthDate)
                 showDialog = false
             }
         )
@@ -155,7 +198,7 @@ fun MemberItem(m: Member) {
             Spacer(modifier = Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = m.name,
+                    text = if (m.isLeader) "${m.name} (Líder)" else m.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -177,6 +220,18 @@ fun MemberItem(m: Member) {
                     )
                 }
             }
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(8.dp),
+                modifier = Modifier.padding(end = 8.dp)
+            ) {
+                Text(
+                    text = m.groupName,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSecondaryContainer,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
             IconButton(
                 onClick = { /* Simulated Call/Message interaction */ },
                 colors = IconButtonDefaults.iconButtonColors(
@@ -196,9 +251,26 @@ fun MemberItem(m: Member) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun AddMemberDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
+fun AddMemberDialog(
+    availableGroups: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (String, String, Int, String, String, Boolean, String) -> Unit
+) {
     var name by remember { mutableStateOf("") }
     var contact by remember { mutableStateOf("") }
+    var ageText by remember { mutableStateOf("") }
+    var gender by remember { mutableStateOf("Masculino") }
+    var isLeader by remember { mutableStateOf(false) }
+    var birthdateText by remember { mutableStateOf("") }
+
+    val age = ageText.toIntOrNull() ?: 0
+
+    val calculatedGroup = when {
+        age < 12 -> "Crianças"
+        age < 18 -> "Adolescentes"
+        age <= 29 -> "Jovens"
+        else -> if (gender == "Masculino") "Homens" else "Mulheres"
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -220,12 +292,51 @@ fun AddMemberDialog(onDismiss: () -> Unit, onSave: (String, String) -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = ageText,
+                        onValueChange = { ageText = it.filter { char -> char.isDigit() } },
+                        label = { Text("Idade") },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    )
+                    OutlinedTextField(
+                        value = birthdateText,
+                        onValueChange = { birthdateText = it },
+                        label = { Text("Aniversário (dd/mm/aaaa)") },
+                        modifier = Modifier.weight(2f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Sexo: ")
+                    Spacer(modifier = Modifier.width(8.dp))
+                    listOf("Masculino", "Feminino").forEach { sex ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(
+                                selected = gender == sex,
+                                onClick = { gender = sex }
+                            )
+                            Text(sex, modifier = Modifier.padding(end = 8.dp))
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = isLeader, onCheckedChange = { isLeader = it })
+                    Text("Líder do Grupo?")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Grupo Automático: $calculatedGroup", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSave(name, contact) },
-                enabled = name.isNotBlank() && contact.isNotBlank()
+                onClick = { onSave(name, contact, age, gender, calculatedGroup, isLeader, birthdateText) },
+                enabled = name.isNotBlank() && contact.isNotBlank() && ageText.isNotBlank()
             ) { Text("Gravar") }
         },
         dismissButton = {

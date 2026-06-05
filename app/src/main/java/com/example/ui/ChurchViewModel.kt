@@ -21,6 +21,7 @@ import com.example.data.ChurchRepository
 import com.example.data.Member
 import com.example.data.Transaction
 import com.example.data.TransactionType
+import com.example.data.AuditLog
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -40,6 +41,7 @@ class ChurchViewModel(application: Application) : AndroidViewModel(application) 
 
     val members: StateFlow<List<Member>>
     val transactions: StateFlow<List<Transaction>>
+    val auditLogs: StateFlow<List<AuditLog>>
 
     private val _churchName = MutableStateFlow(sharedPrefs.getString("church_name", "Igreja Cristo Vive") ?: "Igreja Cristo Vive")
     val churchName = _churchName.asStateFlow()
@@ -77,18 +79,26 @@ class ChurchViewModel(application: Application) : AndroidViewModel(application) 
         repository = ChurchRepository(database.churchDao())
         members = repository.allMembers.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
         transactions = repository.allTransactions.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        auditLogs = repository.allAuditLogs.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
     }
 
-    fun insertMember(name: String, contact: String) = viewModelScope.launch(Dispatchers.IO) {
-        repository.insertMember(Member(name = name, contact = contact))
+    private fun logAction(action: String, details: String) = viewModelScope.launch(Dispatchers.IO) {
+        repository.insertAuditLog(com.example.data.AuditLog(action = action, details = details, userName = _userRole.value))
+    }
+
+    fun insertMember(name: String, contact: String, age: Int, gender: String, groupName: String, isLeader: Boolean, birthDate: Long = 0L) = viewModelScope.launch(Dispatchers.IO) {
+        repository.insertMember(Member(name = name, contact = contact, age = age, gender = gender, groupName = groupName, isLeader = isLeader, birthDate = birthDate))
+        logAction("Membro Adicionado", "Membro: $name, Grupo: $groupName")
     }
 
     fun insertTransaction(title: String, amount: Double, type: TransactionType, memberId: Int?, isPaidViaPixOrCard: Boolean) = viewModelScope.launch(Dispatchers.IO) {
         repository.insertTransaction(Transaction(title = title, amount = amount, type = type, memberId = memberId, isPaidViaPixOrCard = isPaidViaPixOrCard))
+        logAction("Transação Financeira Adicionada", "${type.name} - Valor: ${formatCurrency(amount)} ($title)")
     }
 
     fun deleteTransaction(id: Int) = viewModelScope.launch(Dispatchers.IO) {
         repository.deleteTransaction(id)
+        logAction("Transação Financeira Removida", "ID da transação: $id removida do sistema.")
     }
 
     // Dynamic preference updates
@@ -157,6 +167,12 @@ class ChurchViewModel(application: Application) : AndroidViewModel(application) 
              )
 
              val apiKey = BuildConfig.GEMINI_API_KEY
+             if (apiKey.isBlank() || apiKey.contains("MY_GEMINI_API_KEY")) {
+                 _aiReport.value = "⚠️ Chave da API do Gemini não configurada!\n\nPara gerar relatórios, por favor adicione a sua chave de API do Google Gemini com a variável GEMINI_API_KEY no painel de segredos (Secrets) do seu projeto."
+                 _isGeneratingReport.value = false
+                 return@launch
+             }
+
              val response = RetrofitClient.service.generateContent(apiKey, request)
              val text = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text
              _aiReport.value = text ?: "Erro ao gerar o relatório com a Inteligência Artificial."
@@ -201,6 +217,10 @@ class ChurchViewModel(application: Application) : AndroidViewModel(application) 
                 )
             )
             val apiKey = BuildConfig.GEMINI_API_KEY
+            if (apiKey.isBlank() || apiKey.contains("MY_GEMINI_API_KEY")) {
+                _churchName.value = "Insira sua API Key do Gemini no painel Secrets"
+                return@launch
+            }
             val response = RetrofitClient.service.generateContent(apiKey, request)
             var extractedText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text?.trim()
 

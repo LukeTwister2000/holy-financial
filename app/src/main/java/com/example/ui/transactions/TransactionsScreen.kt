@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import com.example.data.AuditLog
 import com.example.data.Transaction
 import com.example.data.TransactionType
 import com.example.ui.ChurchViewModel
@@ -35,7 +36,9 @@ import com.example.ui.ChurchViewModel
 @Composable
 fun TransactionsScreen(viewModel: ChurchViewModel) {
     val transactions by viewModel.transactions.collectAsState()
+    val auditLogs by viewModel.auditLogs.collectAsState()
     var showDialog by remember { mutableStateOf(false) }
+    var showAuditLogs by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("TODOS") } // TODOS, ENTRADAS, SAIDAS
 
     val filteredTransactions = remember(transactions, selectedFilter) {
@@ -49,7 +52,12 @@ fun TransactionsScreen(viewModel: ChurchViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Livro Caixa da Igreja", fontWeight = FontWeight.Bold) }
+                title = { Text("Caixa da Igreja", fontWeight = FontWeight.Bold) },
+                actions = {
+                    IconButton(onClick = { showAuditLogs = true }) {
+                        Icon(Icons.Filled.History, contentDescription = "Trilha de Auditoria")
+                    }
+                }
             )
         },
         floatingActionButton = {
@@ -68,6 +76,64 @@ fun TransactionsScreen(viewModel: ChurchViewModel) {
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
         ) {
+            // General Sum
+            val totalSum = filteredTransactions.sumOf { if (it.type == TransactionType.DESPESA) -it.amount else it.amount }
+            val totalIncome = transactions.sumOf { if (it.type != TransactionType.DESPESA) it.amount else 0.0 }
+            val totalExpense = transactions.sumOf { if (it.type == TransactionType.DESPESA) it.amount else 0.0 }
+            
+            val maxVal = maxOf(totalIncome, totalExpense).toFloat().coerceAtLeast(1f)
+            val incomeHeight = (totalIncome.toFloat() / maxVal) * 100f
+            val expenseHeight = (totalExpense.toFloat() / maxVal) * 100f
+            
+            // Bar Chart Visualization for Income vs Expenses
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Balanço Mensal", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.Bottom
+                    ) {
+                        // Income Bar
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .width(48.dp)
+                                    .height(incomeHeight.dp.coerceAtLeast(4.dp))
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                    .background(Color(0xFF4CAF50))
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text("Receitas", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(viewModel.formatCurrency(totalIncome), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        
+                        // Expense Bar
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                            Box(
+                                modifier = Modifier
+                                    .width(48.dp)
+                                    .height(expenseHeight.dp.coerceAtLeast(4.dp))
+                                    .clip(RoundedCornerShape(topStart = 8.dp, topEnd = 8.dp))
+                                    .background(MaterialTheme.colorScheme.error)
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text("Despesas", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                            Text(viewModel.formatCurrency(totalExpense), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+
             // Minimal filter selection segment
             Row(
                 modifier = Modifier
@@ -78,6 +144,26 @@ fun TransactionsScreen(viewModel: ChurchViewModel) {
                 FilterTabChip("Todos", selectedFilter == "TODOS") { selectedFilter = "TODOS" }
                 FilterTabChip("Dízimos e Ofertas", selectedFilter == "ENTRADAS") { selectedFilter = "ENTRADAS" }
                 FilterTabChip("Despesas", selectedFilter == "SAIDAS") { selectedFilter = "SAIDAS" }
+            }
+
+            val amountColor = if (totalSum >= 0) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .padding(16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Somatório Geral:", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    text = viewModel.formatCurrency(totalSum),
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = amountColor
+                )
             }
 
             if (filteredTransactions.isEmpty()) {
@@ -142,6 +228,28 @@ fun TransactionsScreen(viewModel: ChurchViewModel) {
             onSave = { title, amount, type, memberId, isPixOrCard ->
                 viewModel.insertTransaction(title, amount, type, memberId, isPixOrCard)
                 showDialog = false
+            }
+        )
+    }
+
+    if (showAuditLogs) {
+        AlertDialog(
+            onDismissRequest = { showAuditLogs = false },
+            title = { Text("Trilha de Auditoria", fontWeight = FontWeight.Bold) },
+            text = {
+                LazyColumn {
+                    items(auditLogs) { log ->
+                        Column(modifier = Modifier.padding(vertical = 4.dp).fillMaxWidth()) {
+                            Text(log.action, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                            Text(log.details, style = MaterialTheme.typography.bodySmall)
+                            Text("Por: ${log.userName} em ${java.text.SimpleDateFormat("dd/MM/yyyy HH:mm").format(java.util.Date(log.timestamp))}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Divider(modifier = Modifier.padding(top = 8.dp))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showAuditLogs = false }) { Text("Fechar") }
             }
         )
     }
@@ -512,7 +620,19 @@ fun AddTransactionDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val value = amount.replace(",", ".").toDoubleOrNull() ?: 0.0
+                    val cleaned = amount.replace(Regex("[^0-9.,]"), "")
+                    val numericStr = if (cleaned.contains(",") && cleaned.contains(".")) {
+                        if (cleaned.lastIndexOf(",") > cleaned.lastIndexOf(".")) {
+                            cleaned.replace(".", "").replace(",", ".")
+                        } else {
+                            cleaned.replace(",", "")
+                        }
+                    } else if (cleaned.contains(",")) {
+                        cleaned.replace(",", ".")
+                    } else {
+                        cleaned
+                    }
+                    val value = numericStr.toDoubleOrNull() ?: 0.0
                     val finalTitle = title.ifEmpty { "Oferta Ministerial" }
                     onSave(finalTitle, value, type, null, isPixOrCard)
                 },
